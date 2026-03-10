@@ -1,18 +1,17 @@
 # BananaMCP Makefile
 
-BINARY     := banana
-CMD        := ./cmd/banana
-VERSION    := $(shell grep 'const Version' cmd/banana/version.go | sed 's/.*"\(.*\)".*/\1/')
+BINARY  := bananamcp
+VERSION := $(shell grep 'const Version' version.go | sed 's/.*"\(.*\)".*/\1/')
 
-.PHONY: all build test lint fmt tidy clean run help \
+.PHONY: all build test lint fmt tidy clean run-mcp help \
         version version-increment release push
 
-## all: Build the banana binary (default)
+## all: Build the bananamcp binary (default)
 all: build
 
-## build: Build the banana binary
+## build: Build the bananamcp binary
 build:
-	go build -o $(BINARY) $(CMD)
+	go build -o $(BINARY) .
 
 ## test: Run all tests with race detector
 test:
@@ -47,7 +46,7 @@ run-mcp: build
 version:
 	@echo $(VERSION)
 
-## version-increment: Increment patch version in cmd/banana/version.go
+## version-increment: Increment patch version in version.go
 version-increment:
 	@current=$(VERSION); \
 	major=$$(echo $$current | cut -d. -f1); \
@@ -55,12 +54,12 @@ version-increment:
 	patch=$$(echo $$current | cut -d. -f3); \
 	newpatch=$$((patch + 1)); \
 	newver="$$major.$$minor.$$newpatch"; \
-	sed -i "s/const Version = \"$$current\"/const Version = \"$$newver\"/" cmd/banana/version.go; \
+	sed -i "s/const Version = \"$$current\"/const Version = \"$$newver\"/" version.go; \
 	echo "Version bumped: $$current → $$newver"
 
 ## release: Bump version, build, tag, and push
 release: version-increment build
-	@newver=$$(grep 'const Version' cmd/banana/version.go | sed 's/.*"\(.*\)".*/\1/'); \
+	@newver=$$(grep 'const Version' version.go | sed 's/.*"\(.*\)".*/\1/'); \
 	git add -A && \
 	git commit -m "Release v$$newver. $$(gitsum)" && \
 	git tag "v$$newver" && \

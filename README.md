@@ -9,7 +9,7 @@ A lightweight [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) s
 - Default model: `google/gemini-3.1-flash-image-preview`
 - Automatic file extension detection from response MIME type
 - Fail-fast if `OPENROUTER_API_KEY` is not set
-- `banana test <prompt>` subcommand for quick manual testing
+- `bananamcp test <prompt>` subcommand for quick manual testing
 
 ## Requirements
 
@@ -19,17 +19,16 @@ A lightweight [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) s
 ## Installation
 
 ```bash
-# Build
-make build
+go install github.com/nealhardesty/bananamcp@latest
 ```
 
-Or install directly:
+This installs the `bananamcp` binary to `$(go env GOPATH)/bin`.
+
+Or build from source:
 
 ```bash
-go install github.com/nealhardesty/bananamcp/cmd/banana@latest
+make build
 ```
-
-This installs the `banana` binary to `$GOPATH/bin`.
 
 ## Configuration
 
@@ -41,9 +40,9 @@ This installs the `banana` binary to `$GOPATH/bin`.
 ## Usage
 
 ```
-banana mcp              Start the MCP stdio server
-banana test <prompt>    Generate an image and save to output.<ext>
-banana --version        Print version and exit
+bananamcp mcp              Start the MCP stdio server
+bananamcp test <prompt>    Generate an image and save to output.<ext>
+bananamcp --version        Print version and exit
 ```
 
 ## MCP Server
@@ -54,7 +53,7 @@ The server communicates over stdio using the Model Context Protocol. Configure i
 {
   "mcpServers": {
     "bananamcp": {
-      "command": "/path/to/banana",
+      "command": "/path/to/bananamcp",
       "args": ["mcp"],
       "env": {
         "OPENROUTER_API_KEY": "your-key-here"
@@ -82,7 +81,7 @@ The server communicates over stdio using the Model Context Protocol. Configure i
 Generate an image directly from the command line:
 
 ```bash
-banana test A maine coon cat on a fancy throne holding a beer.
+bananamcp test A maine coon cat on a fancy throne holding a beer.
 # Saves to output.png (or .jpg/.webp — derived from model response)
 ```
 
@@ -90,7 +89,7 @@ banana test A maine coon cat on a fancy throne holding a beer.
 
 ```bash
 make help          # Show all targets
-make build         # Build banana binary
+make build         # Build bananamcp binary
 make test          # Run tests with race detector
 make lint          # Run go vet (and golangci-lint if installed)
 make fmt           # Format code
@@ -103,18 +102,16 @@ make version       # Show current version
 
 ```
 bananamcp/
-├── cmd/
-│   └── banana/
-│       ├── main.go        # Single entry point (mcp + test subcommands)
-│       └── version.go     # Semantic version
+├── main.go                    # Single entry point (mcp + test subcommands)
+├── version.go                 # Semantic version
 ├── internal/
 │   └── generator/
-│       └── generator.go   # Image generation logic (shared)
+│       └── generator.go       # Image generation logic
 ├── Makefile
 └── go.mod
 ```
 
-The core business logic lives in `internal/generator`. The single `banana` binary provides both `mcp` (stdio MCP server) and `test` (CLI image generation) subcommands.
+The core business logic lives in `internal/generator`. The `bananamcp` binary provides both `mcp` (stdio MCP server) and `test` (CLI image generation) subcommands.
 
 ## License
 
