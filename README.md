@@ -1,20 +1,25 @@
 # bananamcp
 
-A lightweight [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server written in Go. It communicates via stdio and exposes a single `generate_image` tool that lets AI coding assistants (Cursor, Claude Code, etc.) generate images via [OpenRouter](https://openrouter.ai/) and save them directly to the local filesystem.
+A lightweight [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server written in Go. It communicates via stdio and exposes a single `generate_image` tool that lets AI coding assistants (Cursor, Claude Code, etc.) generate images and save them directly to the local filesystem.
+
+Supports two image generation backends:
+- **OpenRouter** (default) — via `github.com/nealhardesty/easy-llm-wrapper`
+- **Google Vertex AI** — via the `google.golang.org/genai` SDK (activated with `--vertex`)
 
 ## Features
 
 - Single MCP tool: `generate_image`
-- Image generation exclusively via OpenRouter using `github.com/nealhardesty/easy-llm-wrapper`
-- Default model: `google/gemini-3.1-flash-image-preview`
+- Dual backend support: OpenRouter and Google Vertex AI
+- Default model: `gemini-3.1-flash-image-preview` (Nano Banana 2)
 - Automatic file extension detection from response MIME type
-- Fail-fast if `OPENROUTER_API_KEY` is not set
+- Fail-fast on missing required environment variables
 - `bananamcp test <prompt>` subcommand for quick manual testing
 
 ## Requirements
 
-- Go 1.23+
-- `OPENROUTER_API_KEY` environment variable
+- Go 1.24+
+- **OpenRouter mode** (default): `OPENROUTER_API_KEY` environment variable
+- **Vertex AI mode** (`--vertex`): `GCLOUD_PROJECT_ID` environment variable and `gcloud auth application-default login` completed
 
 ## Installation
 
@@ -32,22 +37,36 @@ make build
 
 ## Configuration
 
+### OpenRouter mode (default)
+
 | Variable             | Required | Default                                   | Description                        |
 |----------------------|----------|-------------------------------------------|------------------------------------|
 | `OPENROUTER_API_KEY` | Yes      | —                                         | OpenRouter API key                 |
 | `MODEL`              | No       | `google/gemini-3.1-flash-image-preview`   | Override the image generation model |
 
+### Vertex AI mode (`--vertex`)
+
+| Variable             | Required | Default                            | Description                        |
+|----------------------|----------|------------------------------------|------------------------------------|
+| `GCLOUD_PROJECT_ID`  | Yes      | —                                  | Google Cloud project ID            |
+| `GCLOUD_LOCATION`    | No       | `us-central1`                      | Google Cloud region                |
+| `MODEL`              | No       | `gemini-2.5-flash-image`           | Override the image generation model |
+
+**Prerequisites for Vertex AI:** Run `gcloud auth application-default login` before using `--vertex` mode. The SDK uses Application Default Credentials for authentication.
+
 ## Usage
 
 ```
-bananamcp mcp              Start the MCP stdio server
-bananamcp test <prompt>    Generate an image and save to output.<ext>
-bananamcp --version        Print version and exit
+bananamcp [--vertex] mcp              Start the MCP stdio server
+bananamcp [--vertex] test <prompt>    Generate an image and save to output.<ext>
+bananamcp --version                   Print version and exit
 ```
 
 ## MCP Server
 
 The server communicates over stdio using the Model Context Protocol. Configure it in your MCP client (e.g., Cursor, Claude Code):
+
+### OpenRouter (default)
 
 ```json
 {
@@ -57,6 +76,22 @@ The server communicates over stdio using the Model Context Protocol. Configure i
       "args": ["mcp"],
       "env": {
         "OPENROUTER_API_KEY": "your-key-here"
+      }
+    }
+  }
+}
+```
+
+### Vertex AI
+
+```json
+{
+  "mcpServers": {
+    "bananamcp": {
+      "command": "/path/to/bananamcp",
+      "args": ["--vertex", "mcp"],
+      "env": {
+        "GCLOUD_PROJECT_ID": "your-project-id"
       }
     }
   }
@@ -81,7 +116,12 @@ The server communicates over stdio using the Model Context Protocol. Configure i
 Generate an image directly from the command line:
 
 ```bash
+# OpenRouter (default)
 bananamcp test A maine coon cat on a fancy throne holding a beer.
+
+# Vertex AI
+bananamcp --vertex test A futuristic banana spaceship.
+
 # Saves to output.png (or .jpg/.webp — derived from model response)
 ```
 
@@ -102,16 +142,18 @@ make version       # Show current version
 
 ```
 bananamcp/
-├── main.go                    # Single entry point (mcp + test subcommands)
+├── main.go                    # Entry point (mcp + test subcommands, --vertex flag)
 ├── version.go                 # Semantic version
 ├── internal/
 │   └── generator/
-│       └── generator.go       # Image generation logic
+│       ├── generator.go       # ImageGenerator interface, factory, shared utilities
+│       ├── openrouter.go      # OpenRouter backend (easy-llm-wrapper)
+│       └── vertex.go          # Vertex AI backend (google.golang.org/genai)
 ├── Makefile
 └── go.mod
 ```
 
-The core business logic lives in `internal/generator`. The `bananamcp` binary provides both `mcp` (stdio MCP server) and `test` (CLI image generation) subcommands.
+The `ImageGenerator` interface in `internal/generator` abstracts backend selection. The factory function `generator.New(useVertex)` returns the appropriate implementation based on the `--vertex` flag. Both backends implement the same interface, so `main.go` is backend-agnostic.
 
 ## License
 

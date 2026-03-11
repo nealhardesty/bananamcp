@@ -1,4 +1,6 @@
-// Package generator provides image generation logic using the easy-llm-wrapper library via OpenRouter.
+// Package generator provides image generation backends for BananaMCP.
+// It supports OpenRouter (via easy-llm-wrapper) and Google Vertex AI
+// (via the google.golang.org/genai SDK).
 package generator
 
 import (
@@ -8,57 +10,32 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	llm "github.com/nealhardesty/easy-llm-wrapper"
 )
 
-const defaultImageModel = "google/gemini-3.1-flash-image-preview"
+// ImageGenerator generates images from text prompts and saves them to disk.
+type ImageGenerator interface {
+	GenerateImage(ctx context.Context, prompt, savePath string) (string, error)
+}
 
-// GenerateImage generates an image from the given prompt and saves it to savePath.
-// The actual file extension is derived from the MIME type returned by the model.
-// If savePath already has an extension it is used as-is; otherwise the correct extension is appended.
-// Returns the final path where the image was saved.
-func GenerateImage(ctx context.Context, prompt, savePath string) (string, error) {
-	apiKey := os.Getenv("OPENROUTER_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("OPENROUTER_API_KEY environment variable is not set")
+// New creates an ImageGenerator for the selected backend.
+// When useVertex is true, the Vertex AI backend is used; otherwise OpenRouter.
+func New(useVertex bool) (ImageGenerator, error) {
+	if useVertex {
+		return newVertex()
 	}
+	return newOpenRouter()
+}
 
-	model := defaultImageModel
-	if m := os.Getenv("MODEL"); m != "" {
-		model = m
-	}
-
-	client, err := llm.NewClientWithConfig(llm.Config{
-		Provider: llm.ProviderOpenRouter,
-		Model:    model,
-		BaseURL:  "https://openrouter.ai/api/v1",
-		APIKey:   apiKey,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create LLM client: %w", err)
-	}
-
-	resp, err := client.Complete(ctx, llm.Request{
-		Messages: []llm.Message{
-			{Role: llm.RoleUser, Parts: []llm.Part{llm.TextPart(prompt)}},
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("image generation failed: %w", err)
-	}
-
-	if len(resp.Images) == 0 {
-		return "", fmt.Errorf("model returned no images")
-	}
-
-	finalPath := derivePath(savePath, resp.Images[0].MIMEType)
+// saveImage derives the final file path, ensures the directory exists,
+// and writes imageData to disk. It returns the final path.
+func saveImage(savePath string, imageData []byte, mimeType string) (string, error) {
+	finalPath := derivePath(savePath, mimeType)
 
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
 		return "", fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	if err := os.WriteFile(finalPath, resp.Images[0].Data, 0644); err != nil {
+	if err := os.WriteFile(finalPath, imageData, 0644); err != nil {
 		return "", fmt.Errorf("failed to write image: %w", err)
 	}
 
@@ -97,4 +74,12 @@ func extFromMIME(mimeType string) string {
 		}
 		return ".bin"
 	}
+}
+
+// resolveModel returns the MODEL env var if set, otherwise the provided default.
+func resolveModel(defaultModel string) string {
+	if m := os.Getenv("MODEL"); m != "" {
+		return m
+	}
+	return defaultModel
 }

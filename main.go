@@ -2,17 +2,20 @@
 //
 // Usage:
 //
-//	bananamcp mcp              Start the MCP stdio server (for use with AI assistants)
-//	bananamcp test <prompt>    Generate an image and save to output.<ext>
-//	bananamcp --version        Print version and exit
+//	bananamcp [--vertex] mcp              Start the MCP stdio server (for use with AI assistants)
+//	bananamcp [--vertex] test <prompt>    Generate an image and save to output.<ext>
+//	bananamcp --version                   Print version and exit
 //
 // Examples:
 //
 //	bananamcp mcp
+//	bananamcp --vertex mcp
 //	bananamcp test A maine coon cat on a fancy throne holding a beer.
+//	bananamcp --vertex test A futuristic banana spaceship.
 //
-// OPENROUTER_API_KEY must be set. Optionally set MODEL to override the default
-// image generation model (google/gemini-3.1-flash-image-preview).
+// When --vertex is provided, Vertex AI is used instead of OpenRouter.
+// OPENROUTER_API_KEY must be set for the default backend.
+// GCLOUD_PROJECT_ID must be set for --vertex mode.
 package main
 
 import (
@@ -27,41 +30,55 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
+	args := os.Args[1:]
+
+	var useVertex bool
+	if len(args) > 0 && args[0] == "--vertex" {
+		useVertex = true
+		args = args[1:]
+	}
+
+	if len(args) < 1 {
 		usage()
 		os.Exit(1)
 	}
 
-	switch os.Args[1] {
+	switch args[0] {
 	case "mcp":
-		if err := runMCP(); err != nil {
+		gen, err := generator.New(useVertex)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if err := runMCP(gen); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 	case "test":
-		if len(os.Args) < 3 {
-			fmt.Fprintf(os.Stderr, "error: prompt required\n\nUsage: bananamcp test <prompt>\n")
+		if len(args) < 2 {
+			fmt.Fprintf(os.Stderr, "error: prompt required\n\nUsage: bananamcp [--vertex] test <prompt>\n")
 			os.Exit(1)
 		}
-		if err := runTest(strings.Join(os.Args[2:], " ")); err != nil {
+		gen, err := generator.New(useVertex)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if err := runTest(gen, strings.Join(args[1:], " ")); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 	case "--version", "-v", "version":
 		fmt.Printf("bananamcp %s\n", Version)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown subcommand: %q\n\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "unknown subcommand: %q\n\n", args[0])
 		usage()
 		os.Exit(1)
 	}
 }
 
-// runMCP starts the MCP stdio server.
-func runMCP() error {
-	if os.Getenv("OPENROUTER_API_KEY") == "" {
-		return fmt.Errorf("OPENROUTER_API_KEY environment variable is required")
-	}
-
+// runMCP starts the MCP stdio server using the provided image generator.
+func runMCP(gen generator.ImageGenerator) error {
 	s := server.NewMCPServer(
 		"bananamcp",
 		Version,
@@ -80,14 +97,16 @@ func runMCP() error {
 				mcp.Required(),
 			),
 		),
-		handleGenerateImage,
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return handleGenerateImage(ctx, req, gen)
+		},
 	)
 
 	return server.ServeStdio(s)
 }
 
 // handleGenerateImage handles the generate_image MCP tool call.
-func handleGenerateImage(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleGenerateImage(ctx context.Context, req mcp.CallToolRequest, gen generator.ImageGenerator) (*mcp.CallToolResult, error) {
 	prompt, err := req.RequireString("prompt")
 	if err != nil {
 		return mcp.NewToolResultError("prompt is required"), nil
@@ -98,7 +117,7 @@ func handleGenerateImage(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 		return mcp.NewToolResultError("save_path is required"), nil
 	}
 
-	finalPath, err := generator.GenerateImage(ctx, prompt, savePath)
+	finalPath, err := gen.GenerateImage(ctx, prompt, savePath)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -107,8 +126,8 @@ func handleGenerateImage(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 }
 
 // runTest generates an image from prompt and saves it to output.<ext>.
-func runTest(prompt string) error {
-	finalPath, err := generator.GenerateImage(context.Background(), prompt, "output")
+func runTest(gen generator.ImageGenerator, prompt string) error {
+	finalPath, err := gen.GenerateImage(context.Background(), prompt, "output")
 	if err != nil {
 		return err
 	}
@@ -117,19 +136,29 @@ func runTest(prompt string) error {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `Usage: bananamcp <subcommand> [args]
+	fmt.Fprintf(os.Stderr, `Usage: bananamcp [--vertex] <subcommand> [args]
 
 Subcommands:
   mcp              Start the MCP stdio server
   test <prompt>    Generate an image and save to output.<ext>
   version          Print version and exit
 
-Environment variables:
+Flags:
+  --vertex         Use Google Vertex AI instead of OpenRouter
+
+Environment variables (OpenRouter mode - default):
   OPENROUTER_API_KEY  (required) OpenRouter API key
   MODEL               (optional) Override default model (google/gemini-3.1-flash-image-preview)
 
+Environment variables (Vertex AI mode - --vertex):
+  GCLOUD_PROJECT_ID   (required) Google Cloud project ID
+  GCLOUD_LOCATION     (optional) Google Cloud region (default: us-central1)
+  MODEL               (optional) Override default model (gemini-2.5-flash-image)
+
 Examples:
   bananamcp mcp
+  bananamcp --vertex mcp
   bananamcp test A maine coon cat on a fancy throne holding a beer.
+  bananamcp --vertex test A futuristic banana spaceship.
 `)
 }
